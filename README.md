@@ -116,12 +116,15 @@ person using your tool. Show the message as it is.
 |---|---|---|
 | 402 | `insufficient_tokens` | The studio's wallet can't cover it |
 | 402 | `monthly_limit` | Over what's left of the studio's monthly limit for your tool |
+| 402 | `run_limit` | More than the studio lets your tool charge in one run |
 | 402 | `budget` | Over a project budget or the person's allowance |
 | 403 | `not_enabled` | The studio hasn't enabled your tool (or turned it off) |
 | 403 | `project_not_allowed` | Not one of the projects the studio allowed |
+| 403 | `paused` | The studio paused your tool for this person |
 | 403 | `vendor_pending` | Your tool is waiting for Loft's review (works only in your own organization) |
 | 404 | `no_such_hold` | No such reservation for this person |
 | 409 | `hold_closed` | Already charged or released |
+| 429 | `too_fast` | Your tool is reserving faster than Loft allows; try again later |
 | 400 | `more_than_reserved` / `bad_request` | Fix the request |
 | 503 | `unavailable` | Try again shortly |
 
