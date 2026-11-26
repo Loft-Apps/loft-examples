@@ -5,6 +5,14 @@ their Loft account, pay for each run with their studio's Loft tokens, and get
 the results straight into their Loft project. You don't build accounts,
 billing, invoices or storage.
 
+**Using an AI coding assistant?** Tell it:
+
+> Look at github.com/Loft-Apps/loft-examples and add Pay with Loft to my app.
+
+It reads [AGENTS.md](AGENTS.md), asks you what each thing your app does should
+cost, and wires in the rest. You do one step yourself: register the tool in
+Loft and paste its client ID.
+
 | Example | Language | What it shows |
 |---|---|---|
 | [denoiser](denoiser/) | Python (Flask) | Sign in with Loft, reserve → run → deliver → charge, refusals, the monthly limit |
@@ -99,6 +107,8 @@ Returns `{hold, tokens, project}`.
 optional `note`. The files are checked into the studio's project (library
 **Tools**, a folder named after your tool) as the artist's work, made with
 your tool. Returns `{asset_code, project, items: [{code, name, version}]}`.
+The files are in Loft at `<api_base without /api/v1>/<project>/asset/<asset_code>`:
+link the person there.
 
 **`POST /tokens/holds/<hold>/charge`** `{tokens, description}`: charge what the
 run used, at most what was reserved; the rest goes back. Charging again

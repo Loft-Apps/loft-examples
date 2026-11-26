@@ -13,7 +13,7 @@ It has no accounts, no billing and no storage of its own:
 - **Denoise the whole shot** asks for 120 frames, more than a small monthly
   limit allows, to show Loft refusing a run before anything happens.
 
-Everything Denoiser knows about Loft is in [`loft.py`](loft.py), about 100
+Everything Denoiser knows about Loft is in [`loft.py`](loft.py), about 130
 lines. The app shows it at `/code`.
 
 ## Run it

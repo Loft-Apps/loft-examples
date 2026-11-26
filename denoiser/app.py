@@ -241,7 +241,7 @@ def run():
     client = Loft(s)
 
     try:
-        hold = client.reserve(project, reserve, run_id)          # 1. reserve before it runs
+        hold = client.reserve(project, reserve, run_id, "Denoise")  # 1. reserve before it runs
     except LoftRefused as e:
         return with_cookie(app.response_class(tool_page(s, refused=str(e))), s)
 
@@ -253,9 +253,9 @@ def run():
         final = os.path.join(WORK, run_id, name)
         os.makedirs(os.path.dirname(final), exist_ok=True)
         os.replace(out, final)
-        saved = client.deliver(hold, final,                      # 3. the result, into the project
+        saved = client.deliver(hold, [final],                    # 3. the result, into the project
                                "Denoised at strength %d" % strength)
-        client.charge(hold, charge)                              # 4. charge what it used
+        client.charge(hold, charge, "Denoise")                   # 4. charge what it used
     except Exception as e:
         client.release(hold)                                     # failed: give it all back
         return with_cookie(app.response_class(tool_page(s, refused="The run failed: %s" % e)), s)
