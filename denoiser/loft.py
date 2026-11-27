@@ -5,7 +5,8 @@ sign in with Loft, each run is paid for in the studio's Loft tokens, and the
 results go back into the studio's Loft project.
 
     1. Sign in with Loft     standard OAuth 2.1 + PKCE
-    2. Around each run       reserve tokens, deliver the files, charge what it used
+    2. Around each run       pick the input in Loft, reserve tokens, deliver
+                             the files, charge what it used
 """
 
 import base64
@@ -18,7 +19,9 @@ import requests
 
 LOFT = os.environ.get("LOFT_URL", "https://app.loftapps.com").rstrip("/")
 CLIENT_ID = os.environ.get("LOFT_CLIENT_ID", "")     # from Loft's Developers app
-REDIRECT_URI = os.environ.get("APP_URL", "http://localhost:9120").rstrip("/") + "/loft/callback"
+APP_URL = os.environ.get("APP_URL", "http://localhost:9120").rstrip("/")
+REDIRECT_URI = APP_URL + "/loft/callback"
+PICKED_URI = APP_URL + "/loft/picked"       # where Loft sends the person back after picking
 
 
 class LoftRefused(Exception):
@@ -76,7 +79,7 @@ class Loft:
         self.session = session
         self.me = session["loft"]       # access_token, refresh_token, api_base, organization
 
-    def call(self, method, path, files=None, **kwargs):
+    def call(self, method, path, files=None, raw=False, **kwargs):
         for attempt in (1, 2):
             opened = [("files", open(p, "rb")) for p in files] if files else None
             try:
@@ -88,6 +91,8 @@ class Loft:
             if r.status_code == 401 and attempt == 1:
                 self._refresh()
                 continue
+            if raw and r.status_code < 400:
+                return r.content
             body = _json(r)
             if r.status_code >= 400 or "error" in body:
                 raise LoftRefused(body.get("message") or "Loft refused", body.get("error", ""))
@@ -106,6 +111,22 @@ class Loft:
         """Tokens left this month, and the projects this person may charge."""
         return self.call("GET", "/tokens")
 
+    def pick(self, project, kind, state):
+        """Send the person to Loft to choose files from the project. You never
+        browse their project: you get exactly what they pick, for a day.
+        Returns the address to send their browser to."""
+        return self.call("POST", "/tokens/picks", json={
+            "project": project, "kind": kind, "state": state, "multiple": False,
+            "return_to": PICKED_URI})["url"]
+
+    def picked(self, pick):
+        """What they chose: [{code, name, asset, ...}] (empty if they cancelled)."""
+        return self.call("GET", "/tokens/picks/%s" % pick)["files"]
+
+    def download(self, code):
+        """A picked file's bytes."""
+        return self.call("GET", "/tokens/files/%s" % code, raw=True)
+
     def reserve(self, project, tokens, run_id, description):
         """Before the work: the most this run could cost. Raises LoftRefused if
         the studio can't or won't pay; then do no work."""
@@ -113,9 +134,11 @@ class Loft:
             "project": project, "tokens": tokens, "reference": run_id,
             "description": description})["hold"]
 
-    def deliver(self, hold, paths, note=""):
-        """The run's results, all in one call, into the studio's project."""
-        return self.call("POST", "/tokens/holds/%s/files" % hold, files=paths, data={"note": note})
+    def deliver(self, hold, paths, note="", inputs=()):
+        """The run's results, all in one call, into the studio's project.
+        `inputs`: the picked files they were made from, so Loft keeps the lineage."""
+        return self.call("POST", "/tokens/holds/%s/files" % hold, files=paths,
+                         data={"note": note, "inputs": list(inputs)})
 
     def charge(self, hold, tokens, description=""):
         """What the run actually cost, at most what was reserved."""

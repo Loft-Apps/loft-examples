@@ -15,7 +15,7 @@ Loft and paste its client ID.
 
 | Example | Language | What it shows |
 |---|---|---|
-| [denoiser](denoiser/) | Python (Flask) | Sign in with Loft, reserve → run → deliver → charge, refusals, the monthly limit |
+| [denoiser](denoiser/) | Python (Flask) | Sign in with Loft, pick a frame from Loft, reserve → run → deliver → charge, refusals, the monthly limit |
 
 Each example's Loft integration is one small file (`loft.py` in Denoiser).
 Copy it into your own tool.
@@ -32,11 +32,12 @@ Copy it into your own tool.
    **Sign in with Loft**, the studio's owner or an admin chooses which
    projects your tool may charge and a monthly token limit.
 3. **Each artist signs in as themselves.** Your tool gets a key that acts as
-   that person, for your tool only: it can reserve and charge tokens and
-   deliver files, nothing else in Loft.
+   that person, for your tool only: it can reserve and charge tokens, read the
+   files the person picks for it, and deliver files. Nothing else in Loft.
 4. **Around each run**, your tool calls Loft three or four times:
 
 ```
+pick     POST /tokens/picks                   optional: the person chooses input files in Loft
 reserve  POST /tokens/holds                   before the work: Loft says yes or no
 deliver  POST /tokens/holds/<hold>/files      the results, into the studio's project
 charge   POST /tokens/holds/<hold>/charge     what the run used (never more than reserved)
@@ -103,12 +104,33 @@ hold, so retries are safe. At most 100,000 tokens per hold. A hold not
 charged or released within 24 hours is released.
 Returns `{hold, tokens, project}`.
 
-**`POST /tokens/holds/<hold>/files`**: multipart, one or more `files` and an
-optional `note`. The files are checked into the studio's project (library
+**`POST /tokens/holds/<hold>/files`**: multipart, one or more `files`, an
+optional `note`, and optionally `inputs`: the codes of picked files the
+results were made from (repeat the field, or comma-separated), so Loft records
+the lineage. Each must have been picked for your tool in the run's project. The files are checked into the studio's project (library
 **Tools**, a folder named after your tool) as the artist's work, made with
 your tool. Returns `{asset_code, project, items: [{code, name, version}]}`.
 The files are in Loft at `<api_base without /api/v1>/<project>/asset/<asset_code>`:
 link the person there.
+
+### Files from the studio's project: picks
+
+Your tool never browses a studio's project. It asks the person to pick:
+
+**`POST /tokens/picks`** `{project, kind, return_to, state, multiple}`: `kind`
+is `"image"`, `"video"`, `"audio"` or `""` (any); `return_to` must be on the
+same site as one of your registered return addresses; `multiple` defaults to
+true. Returns `{pick, url, project, kind, expires}`. Send the person's browser
+to `url`: Loft shows them the project's published takes. When they're done,
+Loft sends them to `return_to?pick=<pick>&state=<state>`, or with
+`error=cancelled`. They have an hour to choose.
+
+**`GET /tokens/picks/<pick>`**: `{pick, status, project, files: [{code, name,
+asset, library, version, status}]}`. `status` is `open` (not chosen yet),
+`picked`, `cancelled` or `expired`.
+
+**`GET /tokens/files/<code>`**: a picked file's bytes. Your tool can download
+what was picked for a day, while the file stays published, and nothing else.
 
 **`POST /tokens/holds/<hold>/charge`** `{tokens, description}`: charge what the
 run used, at most what was reserved; the rest goes back. Charging again
@@ -133,6 +155,8 @@ person using your tool. Show the message as it is.
 | 403 | `paused` | The studio paused your tool for this person |
 | 403 | `vendor_pending` | Your tool is waiting for Loft's review (works only in your own organization) |
 | 404 | `no_such_hold` | No such reservation for this person |
+| 404 | `no_such_pick` | No such pick for this person |
+| 404 / 400 | `not_picked` | That file wasn't picked for your tool, the pick expired, or it's no longer published |
 | 409 | `hold_closed` | Already charged or released |
 | 429 | `too_fast` | Your tool is reserving faster than Loft allows; try again later |
 | 400 | `more_than_reserved` / `bad_request` | Fix the request |

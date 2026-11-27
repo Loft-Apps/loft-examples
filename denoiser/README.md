@@ -7,13 +7,16 @@ is real.
 It has no accounts, no billing and no storage of its own:
 
 - **Sign in with Loft** is its only door.
+- **Pick a frame from Loft** sends you to Loft to choose a published take
+  from your project. Denoiser downloads only that file, and the result
+  records it as what it was made from. (Without a pick it works on a sample.)
 - Each run **reserves** tokens first, **delivers** the result into the
   studio's Loft project, then **charges** what it used (reserve 5 tokens a
   megapixel, charge 4). If anything fails, it **releases** the reservation.
 - **Denoise the whole shot** asks for 120 frames, more than a small monthly
   limit allows, to show Loft refusing a run before anything happens.
 
-Everything Denoiser knows about Loft is in [`loft.py`](loft.py), about 130
+Everything Denoiser knows about Loft is in [`loft.py`](loft.py), about 150
 lines. The app shows it at `/code`.
 
 ## Run it
@@ -46,7 +49,9 @@ which is all you need to build and test.
 ## What to copy
 
 - `loft.py`: sign-in (`sign_in_url`, `finish_sign_in`) and the `Loft` client
-  (`tokens`, `reserve`, `deliver`, `charge`, `release`, refresh on 401).
+  (`tokens`, `pick`, `picked`, `download`, `reserve`, `deliver`, `charge`,
+  `release`, refresh on 401).
+- `app.py`'s `pick()` and `picked()`: off to Loft to choose, and back.
 - The order in `app.py`'s `run()`: reserve → work → deliver → charge, and
   release on failure.
 

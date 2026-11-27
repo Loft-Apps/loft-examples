@@ -42,10 +42,11 @@ Don't ask anything else. Decide the rest yourself from the app.
 ## 2. Wire it in
 
 Copy [`denoiser/loft.py`](denoiser/loft.py) into the app. If the app isn't
-Python, port it: it is about 130 lines and the port is mechanical. Keep the
+Python, port it: it is about 150 lines and the port is mechanical. Keep the
 same functions and behaviour: `sign_in_url`, `finish_sign_in`, and a client
-with `tokens`, `reserve(project, tokens, run_id, description)`,
-`deliver(hold, paths, note)`, `charge(hold, tokens, description)` and
+with `tokens`, `pick(project, kind, state)`, `picked(pick)`, `download(code)`,
+`reserve(project, tokens, run_id, description)`,
+`deliver(hold, paths, note, inputs)`, `charge(hold, tokens, description)` and
 `release(hold, description)`, refresh-and-retry-once on a 401, any reply that
 isn't JSON treated as "unavailable", and a `release` that never throws. In a
 port, build a multipart body afresh for the retry; a sent one can't be reused.
@@ -75,7 +76,7 @@ Then, in the app:
    hold = reserve(project, most_it_could_cost, run_id)   # Loft says yes or no BEFORE any work
    try:
        do the work
-       deliver(hold, all result files, note)              # one call, into the studio's project
+       deliver(hold, all result files, note, inputs)      # one call, into the studio's project
        charge(hold, what_it_actually_cost)                # never more than reserved
    except anything:
        release(hold)                                      # a failed run costs nothing
@@ -95,8 +96,17 @@ Then, in the app:
    Northlight's monthly limit for your tool"). Show it where the result would
    have been. Don't rephrase it and don't retry it.
 
-Inputs: a tool can't read files from the studio's Loft project yet. Keep
-whatever upload or input the app already has.
+6. **Inputs from Loft.** If the action works on a file (a frame, a plate, a
+   clip), add a **Pick from Loft** button next to the app's own upload: it
+   calls `pick(project, kind, state)` (`kind` "image", "video", "audio" or "")
+   and redirects the browser to the address it returns. Loft shows the
+   person their project's published takes; they choose, and Loft sends them
+   back to `<app url>/loft/picked?pick=…&state=…` (or with `error=cancelled`).
+   Add that route: check `state`, call `picked(pick)`, `download(code)` each
+   file, and work on it. Pass the codes as `inputs` to `deliver`, so Loft
+   records what the result was made from. The app never browses the
+   project: it gets exactly what was picked, for a day. Keep the app's own
+   upload too.
 
 ## 3. The one step only the person can do
 
@@ -126,6 +136,9 @@ a browser):
       monthly limit) → back in the app, signed in, tokens left shown.
 - [ ] Run a paid action → it succeeds, and the result is in the project's
       **Tools** library in Loft, under the tool's name.
+- [ ] **Pick from Loft** (publish a take in the project first) → choose it →
+      back in the app with that file → run → in Loft, the result's history
+      shows the picked file as what it was made from.
 - [ ] **Developers** in Loft shows the run and the tokens charged.
 - [ ] Set the monthly limit below one run's price (Loft › Outside Tools ›
       Change) and run again → the app shows Loft's refusal and does no work.

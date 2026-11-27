@@ -58,6 +58,15 @@ def with_cookie(response, s):
 
 # ── the tool ────────────────────────────────────────────────────────────────
 
+SAMPLE = {"path": os.path.join(SAMPLES, "lamp-room-noisy.png"), "name": "lamp-room.png",
+          "code": None, "caption": "Sample render, 16 samples: lamp-room.png"}
+
+
+def source(s):
+    """The frame to clean: the one picked from Loft, else the sample."""
+    return s.get("source") or SAMPLE
+
+
 def price(path, batch=1):
     """(reserve, charge): a run reserves its estimate and is charged what it
     used. 5 tokens a megapixel to reserve, 4 to charge, per frame."""
@@ -152,8 +161,8 @@ def tool_page(s, result=None, refused=None):
         status = Loft(s).tokens()
     except LoftRefused as e:
         return page("<div class='notice no' data-notice>%s</div>" % html.escape(str(e)), s)
-    sample = os.path.join(SAMPLES, "lamp-room-noisy.png")
-    reserve, charge = price(sample)
+    src = source(s)
+    reserve, charge = price(src["path"])
     projects = "".join("<option value='%s'%s>%s</option>" % (
         html.escape(p["code"]), " selected" if p["code"] == s.get("project") else "", html.escape(p["name"]))
         for p in status["projects"])
@@ -189,18 +198,19 @@ def tool_page(s, result=None, refused=None):
       <input id='strength' type='range' name='strength' min='3' max='21' value='%(strength)s'>
     </div>
     <div class='cost' data-cost>This frame: <b>%(charge)d tokens</b> (reserves %(reserve)d, charges what it uses)</div>
+    <button class='btn secondary' formaction='/pick' data-pick>Pick a frame from Loft</button>
     <button class='btn' name='batch' value='1' data-run>Denoise frame</button>
     <button class='btn secondary' name='batch' value='120' data-batch>Denoise the whole shot (120 frames)</button>
   </form>
   <div class='frames'>
-    <figure data-before><img src='/sample'><figcaption>Render, 16 samples: lamp-room.png</figcaption></figure>
+    <figure data-before><img src='/source?v=%(source_v)s'><figcaption>%(caption)s</figcaption></figure>
     %(after)s
   </div>
 </div>""" % {
         "notice": notice, "org": html.escape((s["loft"].get("organization") or {}).get("name") or ""),
         "left": "{:,}".format(status["month_left"]), "limit": "{:,}".format(status["month_limit"]),
         "projects": projects, "strength": s.get("strength", 9), "charge": charge, "reserve": reserve,
-        "after": after}, s)
+        "after": after, "caption": html.escape(src["caption"]), "source_v": html.escape(src["code"] or "sample")}, s)
 
 
 @app.route("/sign-in")
@@ -216,6 +226,43 @@ def callback():
         loft.finish_sign_in(s, request.args)
     except LoftRefused:
         pass
+    return with_cookie(redirect("/"), s)
+
+
+@app.route("/pick", methods=["POST"])
+def pick():
+    """Send the person to Loft to choose the frame. Denoiser never sees the
+    rest of their project."""
+    s = session()
+    if not s.get("loft"):
+        return redirect("/")
+    s["project"] = request.form.get("project") or ""
+    s["pick_state"] = secrets.token_urlsafe(16)
+    try:
+        url = Loft(s).pick(s["project"], "image", s["pick_state"])
+    except LoftRefused as e:
+        return with_cookie(app.response_class(tool_page(s, refused=str(e))), s)
+    return with_cookie(redirect(url), s)
+
+
+@app.route("/loft/picked")
+def picked():
+    """Back from Loft with what they chose: download it to work on."""
+    s = session()
+    if not s.get("loft") or request.args.get("state") != s.pop("pick_state", None):
+        return redirect("/")
+    if request.args.get("error"):
+        return with_cookie(redirect("/"), s)
+    client = Loft(s)
+    files = client.picked(request.args.get("pick") or "")
+    if files:
+        f = files[0]
+        path = os.path.join(WORK, "inputs", f["code"], os.path.basename(f["name"]))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as out:
+            out.write(client.download(f["code"]))
+        s["source"] = {"path": path, "name": f["name"], "code": f["code"],
+                       "caption": "From Loft: %s › %s" % (f["asset"], f["name"])}
     return with_cookie(redirect("/"), s)
 
 
@@ -235,8 +282,8 @@ def run():
     batch = max(1, int(request.form.get("batch") or 1))
     strength = int(request.form.get("strength") or 9)
     s["project"], s["strength"] = project, strength
-    sample = os.path.join(SAMPLES, "lamp-room-noisy.png")
-    reserve, charge = price(sample, batch)
+    src = source(s)
+    reserve, charge = price(src["path"], batch)
     run_id = "run-%s" % secrets.token_hex(6)
     client = Loft(s)
 
@@ -247,14 +294,15 @@ def run():
 
     try:
         os.makedirs(WORK, exist_ok=True)
-        name = "lamp-room_denoised.png"
+        name = "%s_denoised.png" % os.path.splitext(os.path.basename(src["name"]))[0].replace("-noisy", "")
         out = os.path.join(WORK, "%s_%s" % (run_id, name))
-        denoise(sample, out, strength)                           # 2. the work
+        denoise(src["path"], out, strength)                      # 2. the work
         final = os.path.join(WORK, run_id, name)
         os.makedirs(os.path.dirname(final), exist_ok=True)
         os.replace(out, final)
         saved = client.deliver(hold, [final],                    # 3. the result, into the project
-                               "Denoised at strength %d" % strength)
+                               "Denoised at strength %d" % strength,
+                               inputs=[src["code"]] if src["code"] else ())
         client.charge(hold, charge, "Denoise")                   # 4. charge what it used
     except Exception as e:
         client.release(hold)                                     # failed: give it all back
@@ -271,9 +319,9 @@ def run():
     return with_cookie(app.response_class(tool_page(s, result=dict(result, file=name))), s)
 
 
-@app.route("/sample")
-def sample():
-    return send_file(os.path.join(SAMPLES, "lamp-room-noisy.png"))
+@app.route("/source")
+def source_image():
+    return send_file(source(session())["path"])
 
 
 @app.route("/work/<name>")
